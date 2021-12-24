@@ -1,0 +1,41 @@
+version: "3.7"
+
+services:
+
+  ipt:
+    image: gbif/ipt:latest
+    environment:
+      # for nginx to work, this must match the url/host name. If local, in /etc/hosts put eg.:
+      # 127.0.0.1	ipt.local.org
+      #VIRTUAL_HOST: ipt.local.org
+      VIRTUAL_HOST: ipt.vtatlasoflife.org,ipt.vtecostudies.org
+      VIRTUAL_PROTO: http
+      VIRTUAL_PORT: 8080
+      HTTPS_METHOD: noredirect
+      CERT_NAME: ipt
+    ports:
+      - "8080:8080"
+    volumes:
+      - /usr/ipt:/srv/ipt
+
+  nginx:
+    image: jwilder/nginx-proxy:latest
+    restart: always
+    ports:
+      # port syntax is "external:internal"
+      - "443:443"
+      - "80:80"
+    environment:
+      DEFAULT_HOST: ipt.vtatlasoflife.org
+    links:
+      - ipt
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - /etc/letsencrypt/live/ipt.vtatlasoflife.org:/etc/nginx/certs
+      # For jwilder/nginx-proxy to find them, certs must be {somename}.crt and {somename}.key,
+      # and the docker volume spec must be a path to there, eg. /certs/hostname:/etc/nginx/certs.
+      # Letsencrypt installs certs in eg. /etc/letsencrypt/archive/ipt.vtatlasoflife.org, then
+      # creates symlinks to those from /etc/letsencrypt/live/ipt.vtatlasoflife.org. Docker can't
+      # use symlinks from the external filesystem, so you must create literal cert files in the 
+      # target external certs directory. A good test is to cat those certs files within docker.
+      # Finally, the underlying app must defin thee environment variable CERT_NAME: somename.
