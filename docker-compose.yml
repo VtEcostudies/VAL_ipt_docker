@@ -11,8 +11,6 @@ services:
       VIRTUAL_HOST: ipt.vtatlasoflife.org,ipt.vtecostudies.org
       VIRTUAL_PROTO: http
       VIRTUAL_PORT: 8080
-#      HTTPS_METHOD: noredirect
-#      CERT_NAME: ipt,eco
       CERT_NAME: ipt
     ports:
       - "8080:8080"
@@ -33,11 +31,12 @@ services:
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - /etc/letsencrypt/live/ipt.vtatlasoflife.org:/etc/nginx/certs
-#      - /etc/letsencrypt/live/ipt.vtecostudies.org:/etc/nginx/ecos
-      # For jwilder/nginx-proxy to find them, certs must be {somename}.crt and {somename}.key,
-      # and the docker volume spec must be a path to there, eg. /certs/hostname:/etc/nginx/certs.
+      # For jwilder/nginx-proxy to find them, certs must be {name}.crt and {name}.key, and
+      # the docker volume spec must be a path to there, eg. /certs/hostname:/etc/nginx/certs.
       # Letsencrypt installs certs in eg. /etc/letsencrypt/archive/ipt.vtatlasoflife.org, then
-      # creates symlinks to those from /etc/letsencrypt/live/ipt.vtatlasoflife.org. Docker can't
+      # creates symlinks to those from /etc/letsencrypt/live/ipt.vtatlasoflife.org. Docker did not
       # resolve symlinks from the external filesystem, so you must create literal cert files in the 
       # target external certs directory. A good test is to cat those certs files within docker.
-      # Finally, the underlying app must define the environment variable CERT_NAME: somename.
+      # The underlying app must define the environment variable CERT_NAME: {name}, without extension.
+      # Also: copy certbot's privkey.pem to {name}.key and fullchain.pem to {name}.crt, or if symlinks
+      # can be made to work, link {name}.key => privkey.pem and {name}.crt => fullchain.pem.
