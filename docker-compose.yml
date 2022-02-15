@@ -40,3 +40,4 @@ services:
       # The underlying app must define the environment variable CERT_NAME: {name}, without extension.
       # Also: copy certbot's privkey.pem to {name}.key and fullchain.pem to {name}.crt, or if symlinks
       # can be made to work, link {name}.key => privkey.pem and {name}.crt => fullchain.pem.
+      - ./ipt_proxy.conf:/etc/nginx/conf.d/ipt_proxy.conf:ro
