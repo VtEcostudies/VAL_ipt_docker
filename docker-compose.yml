@@ -1,9 +1,29 @@
+# ---------------------------------------------------------------------------
+# AFTER CHANGING THIS FILE, DEPLOY WITH ./06_update_ipt_docker_instance.sh
+# (which does down + up), NOT a bare 'docker-compose up -d'.
+# docker-compose v1 against a modern Docker Engine aborts on the in-place
+# RECREATE path with "KeyError: 'ContainerConfig'" -- after it has already
+# killed the containers. down + up takes the fresh-create path and is safe.
+# 04_ipt_docker_up.sh now falls back to down + up automatically, but running 06
+# once after any edit here avoids relying on that.
+# ---------------------------------------------------------------------------
 version: "3.7"
 
 services:
 
   ipt:
     image: gbif/ipt:latest
+    # Previously this service had NO restart policy while nginx had
+    # 'restart: always'. After a host reboot or a Docker daemon restart the
+    # proxy came back and IPT did not -- the site was down, container showing
+    # "Exited (0)", until a human noticed.
+    # 'always' rather than 'unless-stopped' is deliberate: 'always' also revives
+    # containers that were stopped when the daemon restarted, so a reboot in the
+    # middle of the cert-renewal window still ends with IPT running. It fails
+    # toward "service up", which is the priority here.
+    # A deliberate 'docker-compose stop' is still honoured until the daemon
+    # restarts, so 01_ipt_docker_down.sh works as intended.
+    restart: always
     environment:
       # for jwilder to work, VIRTUAL_HOST must match the url/host name. If local, in /etc/hosts put eg.:
       # 127.0.0.1	ipt.local.org
@@ -16,6 +36,13 @@ services:
       - "8080:8080"
     volumes:
       - /usr/ipt:/srv/ipt
+    # Bound container logs so 'docker logs' keeps useful history for post-mortems
+    # without filling /dev/root. 3 x 20MB per container.
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
 
   nginx:
     image: jwilder/nginx-proxy:latest
@@ -41,3 +68,8 @@ services:
       # Also: copy certbot's privkey.pem to {name}.key and fullchain.pem to {name}.crt, or if symlinks
       # can be made to work, link {name}.key => privkey.pem and {name}.crt => fullchain.pem.
       - ./ipt_proxy.conf:/etc/nginx/conf.d/ipt_proxy.conf:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"

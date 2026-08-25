@@ -1,24 +1,64 @@
-# Edit this file to introduce tasks to be run by cron.
-# 
-# Each task to run has to be defined through a single line indicating with different fields when the task will be run and what 
-# command to run for the task
-# 
-# To define the time you can provide concrete values for minute (m), hour (h), day of month (dom), month (mon), and day of week 
-# (dow) or use '*' in these fields (for 'any').
-# 
-# Notice that tasks will be started based on the cron's system daemon's notion of time and timezones.
-# 
-# Output of the crontab jobs (including errors) is sent through email to the user the crontab file belongs to (unless 
-# redirected).
-# 
-# For example, you can run a backup of all your user accounts at 5 a.m every week with: 0 5 * * 1 tar -zcf 
-# /var/backups/home.tgz /home/
-# 
-# For more information see the manual pages of crontab(5) and cron(8)
-# 
+# REFERENCE COPY of root's crontab on the IPT host. This file is NOT live --
+# install it with:   sudo crontab -e      (verify with: sudo crontab -l)
+#
 # m h dom mon dow command
-MAILTO=kmcfarland@vtecostudies.org
-0 2 * * * /usr/local/backups/backup_ipt_data.sh
+
+# cron's default PATH is only /usr/bin:/bin. docker-compose and aws are commonly
+# installed to /usr/local/bin, so without this line those calls fail with
+# "command not found" and the job silently does nothing.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# ---------------------------------------------------------------------------
+# EMAIL REPORTING
+#   cron mails a job's OUTPUT to the MAILTO in effect above it. It never mails
+#   on exit status alone, so every script here is written to PRINT when a human
+#   needs to know and stay SILENT otherwise. Do not add '>' or '>>' redirects
+#   to these lines -- that swallows the output and disables all alerting.
+#
+#   PREREQUISITE: cron hands mail to /usr/sbin/sendmail. With no MTA installed
+#   it discards every alert silently. Check with:  ls -l /usr/sbin/sendmail
+#   If missing:  sudo apt install postfix   (08_install_backups.sh checks this).
+# ---------------------------------------------------------------------------
+
+# Nightly unified backup: /usr/ipt -> dated tarball in
+# /usr/local/backups/{daily,weekly,monthly} -> the same tiers in
+# s3://ipt.backups. Local keeps 7/4/3, S3 keeps 14/8/12; local promotion uses a
+# hard link so weekly and monthly copies cost no extra disk. This replaced the
+# old /usr/local/backups/backup_ipt_data.sh, which wrote one
+# vce_ipt_data_<timestamp>.tar.gz every night and never pruned any of them.
+#   - ANY failure prints, so it is mailed the night it happens.
+#   - Successful runs are silent EXCEPT Mondays, when a digest is mailed.
+#     That weekly digest is the "backups are alive" signal -- if it stops
+#     arriving, the job has stopped running.
+#   Run 08_install_backups.sh once before enabling this line: it adopts the
+#   legacy archive pile into the tiers and removes the superseded script.
+MAILTO=kmcfarland@vtecostudies.org,jloomis@vtecostudies.org
+0 2 * * * /home/ubuntu/val_ipt/aws_backups/backup_ipt_data.sh
+
 MAILTO=jloomis@vtecostudies.org
+# Disk space heartbeat. Now partly redundant -- the Monday backup digest also
+# reports free space. Drop this line if the daily mail is noise.
 0 2 * * * df -kh /dev/root
-0 2 1 * * /home/ubuntu/00_certs_do_all.sh
+
+# Monthly certbot renewal. Runs at 02:30, NOT 02:00, so it does not overlap the
+# nightly backup above -- the backup tars /usr/ipt while this job stops and
+# restarts the containers.
+# NOTE: this path must point at the repo checkout (the one holding
+# docker-compose.yml). Confirm on the host before trusting it.
+# 'tee' rather than '>>': a plain redirect would send ALL output to the file and
+# cron would mail NOTHING -- silently hiding a failed renewal, from the very job
+# that took the site down. tee keeps the log AND lets cron mail the result.
+30 2 1 * * /home/ubuntu/val_ipt/00_certs_do_all.sh 2>&1 | tee -a /var/log/ipt_certs.log
+
+# ---------------------------------------------------------------------------
+# RECOMMENDED (opt in by uncommenting): an independent uptime probe.
+# Nothing above notices that the SITE is down. The backup tars the host
+# directory /usr/ipt and succeeds whether or not the container is running, so
+# its digest stays green during an outage. This probe is the only check that
+# actually asks whether IPT is serving.
+# Caveat: it mails on EVERY failed run, so a weekend-long outage means a mail
+# every 15 minutes. Add flap-damping (a state file) if that is too noisy.
+#
+#*/15 * * * * curl -fsS -m 20 -o /dev/null https://ipt.vtatlasoflife.org/ || echo "IPT DOWN: https://ipt.vtatlasoflife.org not responding"
+# ---------------------------------------------------------------------------

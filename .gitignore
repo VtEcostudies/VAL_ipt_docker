@@ -1,0 +1,12 @@
+# Backup artifacts never belong in git -- they are multi-GB and live in
+# /usr/local/backups on the host. 08_install_backups.sh moves any that were
+# left in aws_backups/ out to the host's data directory.
+*.tar.gz
+*.tar.gz.partial
+backup_status.tsv
+legacy_review/
+
+# Certs and keys
+*.pem
+*.key
+*.crt
