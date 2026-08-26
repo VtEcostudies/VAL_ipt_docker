@@ -16,8 +16,13 @@
 #     Amazon SES      --relay email-smtp.<region>.amazonaws.com:587
 #                     --user <SES SMTP username>   (NOT an AWS access key id;
 #                     generate SMTP credentials in the SES console)
-#                     --from must be an SES-VERIFIED identity, and the account
-#                     must be out of the SES sandbox to mail arbitrary addresses.
+#                     --from must be at an SES-VERIFIED domain. vtatlasoflife.org
+#                     is verified, so ipt@vtatlasoflife.org works -- SES does NOT
+#                     require a real mailbox behind it, only control of the DNS.
+#                     SANDBOX: recipients must be verified too. The MAILTO targets
+#                     are @vtecostudies.org, a DIFFERENT domain from the sender, so
+#                     each must be verified individually until production access is
+#                     granted. Identities are per-region: match the --relay region.
 #
 #     Google Workspace relay
 #                     --relay smtp-relay.gmail.com:587
@@ -35,7 +40,7 @@
 #   ./09_install_postfix.sh --status             # report only, no plan
 #   ./09_install_postfix.sh --apply \
 #        --relay email-smtp.us-east-1.amazonaws.com:587 \
-#        --user AKIA...SMTPUSER --from ipt@vtecostudies.org
+#        --user AKIA...SMTPUSER --from ipt@vtatlasoflife.org
 #   ./09_install_postfix.sh --test               # send a probe through the queue
 #
 #   Password: prefer the IPT_SMTP_PASS environment variable, or let the script
@@ -269,8 +274,8 @@ else
         echo "        deliver from EC2 (outbound :25 is blocked by AWS)."
         echo
         echo "    Re-run with one of:"
-        echo "      --relay email-smtp.us-east-1.amazonaws.com:587 --user <SES SMTP user> --from ipt@vtecostudies.org"
-        echo "      --relay smtp-relay.gmail.com:587 --user <workspace acct> --from ipt@vtecostudies.org"
+        echo "      --relay email-smtp.<region>.amazonaws.com:587 --user <SES SMTP user> --from ipt@vtatlasoflife.org"
+        echo "      --relay smtp-relay.gmail.com:587 --user <workspace acct> --from ipt@vtatlasoflife.org"
         echo "      --relay smtp.gmail.com:587 --user you@vtecostudies.org --from you@vtecostudies.org"
         echo "    or --local-only to install an MTA that deliberately delivers nowhere."
         [ "$APPLY" -eq 1 ] && { echo; echo "    Refusing to --apply without a delivery path."; exit 2; }
