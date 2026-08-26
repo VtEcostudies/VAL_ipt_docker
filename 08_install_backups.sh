@@ -234,7 +234,10 @@ if [ -x /usr/sbin/sendmail ] || command -v sendmail >/dev/null 2>&1; then
 else
     echo "    *** WARNING: no sendmail found. cron CANNOT deliver mail, so every"
     echo "        failure alert and the weekly digest would be silently discarded."
-    echo "        Install one, e.g.:  sudo apt install postfix   (or msmtp-mta)"
+    echo "        Fix it with:  ./09_install_postfix.sh   (dry run; --apply to commit)"
+    echo "        Do NOT just 'apt install postfix': this host is EC2, outbound :25"
+    echo "        is blocked, and a default install queues alerts forever instead of"
+    echo "        delivering them. 09 configures a :587 smarthost and verifies it."
 fi
 echo
 

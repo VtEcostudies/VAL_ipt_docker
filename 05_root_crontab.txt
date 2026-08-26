@@ -18,7 +18,12 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 #
 #   PREREQUISITE: cron hands mail to /usr/sbin/sendmail. With no MTA installed
 #   it discards every alert silently. Check with:  ls -l /usr/sbin/sendmail
-#   If missing:  sudo apt install postfix   (08_install_backups.sh checks this).
+#   If missing, run 09_install_postfix.sh -- NOT a bare 'apt install postfix'.
+#   This host is EC2: AWS blocks outbound port 25, so a default postfix accepts
+#   every alert and then queues it forever, which looks identical to working.
+#   09 installs postfix as a satellite relaying via a :587 smarthost with SASL,
+#   and refuses to report success until a test message actually lands.
+#   (08_install_backups.sh checks whether sendmail is present at all.)
 # ---------------------------------------------------------------------------
 
 # Nightly unified backup: /usr/ipt -> dated tarball in
