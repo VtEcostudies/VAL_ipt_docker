@@ -10,3 +10,11 @@ legacy_review/
 *.pem
 *.key
 *.crt
+
+# SES / SMTP credentials. The console hands you a CSV holding a live SMTP
+# password in cleartext; it tends to land in whatever directory you were in.
+# This repo is public -- never let one become committable.
+*credentials*.csv
+*_credentials.csv
+sasl_passwd
+sasl_passwd.db
