@@ -16,5 +16,6 @@ legacy_review/
 # This repo is public -- never let one become committable.
 *credentials*.csv
 *_credentials.csv
+*credentials*.sh
 sasl_passwd
 sasl_passwd.db
