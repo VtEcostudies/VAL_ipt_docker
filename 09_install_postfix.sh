@@ -16,13 +16,15 @@
 #     Amazon SES      --relay email-smtp.<region>.amazonaws.com:587
 #                     --user <SES SMTP username>   (NOT an AWS access key id;
 #                     generate SMTP credentials in the SES console)
-#                     --from must be at an SES-VERIFIED domain. vtatlasoflife.org
-#                     is verified, so ipt@vtatlasoflife.org works -- SES does NOT
-#                     require a real mailbox behind it, only control of the DNS.
-#                     SANDBOX: recipients must be verified too. The MAILTO targets
-#                     are @vtecostudies.org, a DIFFERENT domain from the sender, so
-#                     each must be verified individually until production access is
-#                     granted. Identities are per-region: match the --relay region.
+#                     --from must be at an SES-VERIFIED identity. SES does NOT
+#                     require a real mailbox behind the address, only control of
+#                     the DNS -- domain verification is 3 DKIM CNAME records.
+#                     Identities, SMTP passwords and production access are ALL
+#                     per-region. The SMTP password is derived from the region,
+#                     so credentials generated in one region fail to authenticate
+#                     against another region's endpoint -- and the failure reads
+#                     as bad credentials, which sends you hunting in the wrong
+#                     place. Match --relay to the region holding the identity.
 #
 #     Google Workspace relay
 #                     --relay smtp-relay.gmail.com:587
@@ -32,6 +34,34 @@
 #     Gmail account   --relay smtp.gmail.com:587
 #                     --user you@vtecostudies.org --pass <16-char app password>
 #                     --from must equal --user. Simplest, lowest volume ceiling.
+#
+# CURRENT DEPLOYMENT -- as of 2026-08-26. Update this block when it changes.
+#
+#   region    us-east-1. Identities, SMTP credentials and production access all
+#             live here. us-west-2 is NOT configured; pointing --relay there
+#             fails even with otherwise-valid credentials.
+#
+#   sender    ipt@vtatlasoflife.org. vtatlasoflife.org is a verified DOMAIN
+#             identity with Easy DKIM, so SES signs d=vtatlasoflife.org and the
+#             signature ALIGNS with the From header, which is what DMARC checks.
+#             Do NOT send as @vtecostudies.org: it publishes "v=DMARC1;
+#             p=reject" and is not an SES domain identity, so SES would sign
+#             d=amazonses.com, alignment would fail, and a strict receiver is
+#             entitled to reject the mail outright.
+#
+#   sandbox   EXITED. Production access granted 2026-08-26 for us-east-1, so
+#             recipients no longer need individual verification and MAILTO can
+#             name anyone. Before that every recipient had to be verified by
+#             hand -- if you rebuild this in a NEW region, you are sandboxed
+#             again there and that constraint returns.
+#
+#   DNS       vtatlasoflife.org is hosted at Cloudflare. The three DKIM CNAMEs
+#             must be set to "DNS only" (grey cloud). Cloudflare defaults such
+#             records to Proxied, and a proxied CNAME answers with Cloudflare's
+#             own IPs rather than dkim.amazonses.com -- so SES never sees its
+#             record, verification sits at Pending forever, and NO error
+#             anywhere says why. Confirm with:
+#               dig +short CNAME <token>._domainkey.vtatlasoflife.org
 #
 # SAFE BY DEFAULT: prints a full plan and changes nothing. Re-run with --apply.
 #
@@ -79,7 +109,9 @@ while [ $# -gt 0 ]; do
         --from)       FROM_ADDR="${2:-}"; shift ;;
         --alias)      ROOT_ALIAS="${2:-}"; shift ;;
         --local-only) LOCAL_ONLY=1 ;;
-        -h|--help)    sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        # Range is derived, not hardcoded: the header block grows, and a fixed
+        # line number silently truncates --help mid-sentence when it does.
+        -h|--help)    sed -n '2,/^set -u/p' "$0" | sed 's/^# \{0,1\}//; $d'; exit 0 ;;
         *)            echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
     shift

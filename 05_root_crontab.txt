@@ -24,6 +24,18 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 #   09 installs postfix as a satellite relaying via a :587 smarthost with SASL,
 #   and refuses to report success until a test message actually lands.
 #   (08_install_backups.sh checks whether sendmail is present at all.)
+#
+#   HOW THE MAIL ACTUALLY LEAVES (as of 2026-08-26): postfix relays through
+#   Amazon SES at email-smtp.us-east-1.amazonaws.com:587, sending as
+#   ipt@vtatlasoflife.org. SES has PRODUCTION ACCESS in us-east-1, so any
+#   address may be added to a MAILTO below without verifying it first -- that
+#   was a sandbox restriction and it no longer applies.
+#   Two things to leave alone:
+#     - the sender stays @vtatlasoflife.org. That domain is DKIM-signed by SES
+#       so the signature aligns for DMARC. @vtecostudies.org publishes
+#       p=reject and is not an SES domain identity, so sending as it fails.
+#     - MAILTO is the RECIPIENT list only. Changing it never affects the
+#       sender, which lives in /etc/postfix/sender_canonical on the host.
 # ---------------------------------------------------------------------------
 
 # Nightly unified backup: /usr/ipt -> dated tarball in
