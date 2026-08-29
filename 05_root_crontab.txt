@@ -1,20 +1,42 @@
-# REFERENCE COPY of root's crontab on the IPT host. This file is NOT live --
+# WORKING COPY of root's crontab on the IPT host. This file is NOT live --
 # install it with:   sudo crontab -e      (verify with: sudo crontab -l)
 #
+# Safe to paste wholesale: every comment line here is legal in a crontab.
+#
 # m h dom mon dow command
+#
+# ---------------------------------------------------------------------------
+# TIMES BELOW ARE UTC. The host runs on UTC; you read mail on US Eastern.
+#   02:00 UTC = 22:00 EDT the PREVIOUS day
+#   12:00 UTC = 08:00 EDT the same morning
+# That is why the nightly backup mail has always arrived at 10pm. Heartbeats
+# are scheduled at 12:00 UTC so they land in your inbox at breakfast instead.
+#
+# GOTCHA when editing: cron treats an unescaped '%' as a newline. Any command
+# using date formatting must escape it -- 'date +\%F', never 'date +%F'.
+# ---------------------------------------------------------------------------
 
 # cron's default PATH is only /usr/bin:/bin. docker-compose and aws are commonly
 # installed to /usr/local/bin, so without this line those calls fail with
-# "command not found" and the job silently does nothing.
+# "command not found" and the job silently does nothing. The cert renewal
+# failing this way for five months, unnoticed, is why the heartbeats below
+# exist -- do not drop these two lines.
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # ---------------------------------------------------------------------------
 # EMAIL REPORTING
 #   cron mails a job's OUTPUT to the MAILTO in effect above it. It never mails
-#   on exit status alone, so every script here is written to PRINT when a human
-#   needs to know and stay SILENT otherwise. Do not add '>' or '>>' redirects
-#   to these lines -- that swallows the output and disables all alerting.
+#   on exit status alone. Do not add '>' or '>>' redirects to these lines --
+#   that swallows the output and disables all alerting.
+#
+#   TWO KINDS OF MAIL HERE, deliberately:
+#     ALERTS     print only when something is wrong. Silence means healthy.
+#     HEARTBEATS print every day no matter what. Silence means BROKEN.
+#   Alerts alone are not enough: a job that stops running produces no alert,
+#   which is indistinguishable from a job that is fine. That is exactly how the
+#   certificate expired in April 2026 and went unnoticed until August. A
+#   heartbeat that stops arriving is itself the alarm.
 #
 #   PREREQUISITE: cron hands mail to /usr/sbin/sendmail. With no MTA installed
 #   it discards every alert silently. Check with:  ls -l /usr/sbin/sendmail
@@ -38,35 +60,101 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 #       sender, which lives in /etc/postfix/sender_canonical on the host.
 # ---------------------------------------------------------------------------
 
+
+# ===========================================================================
+# ALERTS -- these print only on trouble. Both people get them.
+# ===========================================================================
+MAILTO=kmcfarland@vtecostudies.org,jloomis@vtecostudies.org
+
 # Nightly unified backup: /usr/ipt -> dated tarball in
 # /usr/local/backups/{daily,weekly,monthly} -> the same tiers in
 # s3://ipt.backups. Local keeps 7/4/3, S3 keeps 14/8/12; local promotion uses a
-# hard link so weekly and monthly copies cost no extra disk. This replaced the
-# old /usr/local/backups/backup_ipt_data.sh, which wrote one
-# vce_ipt_data_<timestamp>.tar.gz every night and never pruned any of them.
+# hard link so weekly and monthly copies cost no extra disk.
 #   - ANY failure prints, so it is mailed the night it happens.
-#   - Successful runs are silent EXCEPT Mondays, when a digest is mailed.
-#     That weekly digest is the "backups are alive" signal -- if it stops
-#     arriving, the job has stopped running.
-#   Run 08_install_backups.sh once before enabling this line: it adopts the
-#   legacy archive pile into the tiers and removes the superseded script.
-MAILTO=kmcfarland@vtecostudies.org,jloomis@vtecostudies.org
+#   - A successful run is silent here. The daily digest below is what proves
+#     it is still running.
+#   Run 08_install_backups.sh once before enabling this line.
+# 02:00 UTC = 22:00 EDT previous day.
 0 2 * * * /home/ubuntu/val_ipt/aws_backups/backup_ipt_data.sh
 
-MAILTO=jloomis@vtecostudies.org
-# Disk space heartbeat. Now partly redundant -- the Monday backup digest also
-# reports free space. Drop this line if the daily mail is noise.
-0 2 * * * df -kh /dev/root
 
-# Monthly certbot renewal. Runs at 02:30, NOT 02:00, so it does not overlap the
-# nightly backup above -- the backup tars /usr/ipt while this job stops and
-# restarts the containers.
+# ===========================================================================
+# HEARTBEATS -- these print EVERY day. Their ABSENCE is the alarm.
+# One inbox only: they are routine, and routine mail to two people gets
+# ignored twice as fast.
+# ===========================================================================
+MAILTO=jloomis@vtecostudies.org
+
+# --- disk space -------------------------------------------------------------
+# Filling the root volume takes IPT down and silently breaks the backup, which
+# needs room to build a tarball before uploading it.
+0 12 * * * df -kh /dev/root
+
+# --- certificate expiry -----------------------------------------------------
+# The renewal job below runs weekly; THIS runs daily and reports the state of
+# every lineage certbot knows about, including days remaining. It is the check
+# that would have screamed in April, when the cert expired and the renewal had
+# been failing silently for a month.
+#
+# The '|| echo' matters: if certbot errors or prints nothing, grep matches
+# nothing, cron mails nothing, and a broken check looks exactly like a healthy
+# one. The fallback guarantees this line always produces output.
+0 12 * * * certbot certificates 2>&1 | grep -E 'Certificate Name|Domains|Expiry Date' || echo "CERT CHECK FAILED -- certbot produced no certificate output. Run: sudo certbot certificates"
+
+# --- backup inventory -------------------------------------------------------
+# Prints the same digest the nightly run emits on Mondays: what exists locally
+# and in S3, newest archive age, free space. Runs at 12:00 UTC, ten hours after
+# the 02:00 backup, so it reflects that night's result.
+#
+# NOTE: on Mondays the nightly run ALSO prints its built-in digest, so you get
+# two similar mails. To suppress the built-in one and rely solely on this line,
+# add  IPT_DIGEST_DOW=0  above the backup job in the ALERTS section (0 never
+# matches 'date +%u', which returns 1-7). Left on by default so that deleting
+# this heartbeat does not silently remove the Monday signal too.
+0 12 * * * /home/ubuntu/val_ipt/aws_backups/backup_ipt_data.sh --report
+
+
+# ===========================================================================
+# CERTIFICATE RENEWAL
+# ===========================================================================
+
+# WHY WEEKLY, NOT MONTHLY. Let's Encrypt issues 90-day certs and 'certbot
+# renew' refuses to act until 30 days before expiry. A job running monthly on
+# the 1st therefore lands inside that window roughly ONCE -- and if that single
+# run fails, there is no retry before the cert dies. That is precisely what
+# happened: the Jan 6 cert opened its window on Mar 7; the Mar 1 run was six
+# days too early to do anything, the Apr 1 run was the only real chance, and
+# the cert expired Apr 6. Weekly gives four attempts inside the same window.
+#
+# 'certbot renew' is a no-op when nothing is due, so the extra runs cost only
+# the brief container restart 00_certs_do_all.sh performs.
+#
+# 04:30 UTC Sunday, NOT 02:30: the nightly backup starts at 02:00 and tars
+# /usr/ipt, while this job stops and restarts the containers. Thirty minutes
+# was an assumption about how long the backup takes; two and a half hours is a
+# margin. Sunday because the weekly backup promotion also happens Sunday and
+# is already accounted for.
+#
 # NOTE: this path must point at the repo checkout (the one holding
 # docker-compose.yml). Confirm on the host before trusting it.
 # 'tee' rather than '>>': a plain redirect would send ALL output to the file and
 # cron would mail NOTHING -- silently hiding a failed renewal, from the very job
 # that took the site down. tee keeps the log AND lets cron mail the result.
-30 2 1 * * /home/ubuntu/val_ipt/00_certs_do_all.sh 2>&1 | tee -a /var/log/ipt_certs.log
+# This is the "attempted" signal: it mails every Sunday whether or not a
+# renewal was actually due, so you see the attempt as well as the outcome.
+#
+# NOTE ON RECIPIENTS: this line sits under the heartbeat MAILTO, so a cert
+# FAILURE reaches jloomis only. That is deliberate -- it mails every Sunday
+# even when nothing was due, and routine weekly mail to two people gets
+# ignored twice as fast. If you would rather Kent see cert trouble too, move
+# this line above the 'MAILTO=jloomis@...' line. cron cannot route by outcome:
+# whoever the MAILTO names gets the routine mail and the failures alike.
+30 4 * * 0 /home/ubuntu/val_ipt/00_certs_do_all.sh 2>&1 | tee -a /var/log/ipt_certs.log
+
+# Previous monthly schedule, kept for reference. Do not re-enable without
+# reading the paragraph above -- it is the schedule that let the cert expire.
+#30 2 1 * * /home/ubuntu/val_ipt/00_certs_do_all.sh 2>&1 | tee -a /var/log/ipt_certs.log
+
 
 # ---------------------------------------------------------------------------
 # RECOMMENDED (opt in by uncommenting): an independent uptime probe.
