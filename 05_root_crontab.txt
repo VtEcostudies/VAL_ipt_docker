@@ -166,24 +166,24 @@ MAILTO=kmcfarland@vtecostudies.org,jloomis@vtecostudies.org
 # directory /usr/ipt and succeeds whether or not the container is running, so
 # its digest stays green throughout an outage.
 #
-# Silent while healthy: curl -f fails on any HTTP >= 400 and -s -o /dev/null
-# suppresses normal output, so the echo only fires when the site is not
-# serving. This one is an ALERT, not a heartbeat -- see the caveat below.
+# This was a bare curl line until 2026-08-29, when it produced a false "IPT
+# DOWN" every 30 minutes while the site was serving normally. It probed
+# ipt.vtatlasoflife.org, which resolves to Cloudflare; requests leaving THIS
+# host come from an AWS datacenter address, and Cloudflare's bot protection
+# answers those with 403. The script now probes ipt.vtecostudies.org, which
+# resolves straight to the EC2 host with no proxy in between, retries before
+# declaring an outage, and reports the actual HTTP code.
 #
-# NOISE: it mails on EVERY failed run. At */30 that is 48 mails a day per
-# recipient during an outage, so a Friday-night failure means roughly 100
-# mails each by Monday. If that becomes a problem, the fix is flap-damping:
-# a state file that mails on the transition into and out of DOWN rather than
-# on every probe. Ask before a long weekend.
+# Silent while healthy. It mails on the TRANSITION -- once going down, once
+# recovering -- then reminds every 12h while still down. The old line mailed
+# on every failed probe, which at */30 was ~48 mails a day per recipient.
 #
-# WHAT IT ACTUALLY TESTS: ipt.vtatlasoflife.org resolves to Cloudflare, so
-# this probe exercises the path a real user takes -- which is the right thing
-# to alert on. But it means Cloudflare sits between the probe and the origin.
-# An origin failure normally still surfaces (Cloudflare returns 521/522/523,
-# which curl -f treats as failure), though a cached response could mask a dead
-# origin. To watch the origin directly instead, probe ipt.vtecostudies.org,
-# which resolves straight to the EC2 host with no proxy in front. Running both
-# is also reasonable -- it doubles outage mail but distinguishes "the site is
-# down" from "Cloudflare cannot reach the origin".
-*/30 * * * * curl -fsS -m 20 -o /dev/null https://ipt.vtatlasoflife.org/ || echo "IPT DOWN: https://ipt.vtatlasoflife.org not responding"
+# Run it by hand any time:  ./10_ipt_uptime_probe.sh --status
+#                           ./10_ipt_uptime_probe.sh --verbose
+#
+# TO ALSO WATCH THE CLOUDFLARE EDGE (what outside users actually reach), add a
+# second line with --url https://ipt.vtatlasoflife.org/ and its own --state
+# file. It needs 54.202.72.31 allowlisted in Cloudflare first (WAF > Tools >
+# IP Access Rules), or it will 403 exactly as before.
+*/30 * * * * /home/ubuntu/val_ipt/10_ipt_uptime_probe.sh
 # ===========================================================================
