@@ -80,10 +80,16 @@ MAILTO=kmcfarland@vtecostudies.org,jloomis@vtecostudies.org
 
 # ===========================================================================
 # HEARTBEATS -- these print EVERY day. Their ABSENCE is the alarm.
-# One inbox only: they are routine, and routine mail to two people gets
-# ignored twice as fast.
 # ===========================================================================
-MAILTO=jloomis@vtecostudies.org
+# Everything below inherits the MAILTO above, so both people get every message.
+# That is deliberate: a heartbeat only works if somebody notices it stopped, and
+# one recipient on vacation is one recipient not noticing. Redundant human
+# monitoring is the entire point of a heartbeat.
+#
+# To send heartbeats to a single inbox instead, uncomment the line below --
+# but note it then also captures the cert renewal and uptime probe further
+# down, since a MAILTO applies to every job until the next one.
+#MAILTO=jloomis@vtecostudies.org
 
 # --- disk space -------------------------------------------------------------
 # Filling the root volume takes IPT down and silently breaks the backup, which
@@ -143,12 +149,9 @@ MAILTO=jloomis@vtecostudies.org
 # This is the "attempted" signal: it mails every Sunday whether or not a
 # renewal was actually due, so you see the attempt as well as the outcome.
 #
-# NOTE ON RECIPIENTS: this line sits under the heartbeat MAILTO, so a cert
-# FAILURE reaches jloomis only. That is deliberate -- it mails every Sunday
-# even when nothing was due, and routine weekly mail to two people gets
-# ignored twice as fast. If you would rather Kent see cert trouble too, move
-# this line above the 'MAILTO=jloomis@...' line. cron cannot route by outcome:
-# whoever the MAILTO names gets the routine mail and the failures alike.
+# Goes to both recipients, like everything else here. cron cannot route by
+# outcome -- whoever the MAILTO names gets the routine Sunday mail and the
+# failures alike.
 30 4 * * 0 /home/ubuntu/val_ipt/00_certs_do_all.sh 2>&1 | tee -a /var/log/ipt_certs.log
 
 # Previous monthly schedule, kept for reference. Do not re-enable without
@@ -156,14 +159,31 @@ MAILTO=jloomis@vtecostudies.org
 #30 2 1 * * /home/ubuntu/val_ipt/00_certs_do_all.sh 2>&1 | tee -a /var/log/ipt_certs.log
 
 
-# ---------------------------------------------------------------------------
-# RECOMMENDED (opt in by uncommenting): an independent uptime probe.
-# Nothing above notices that the SITE is down. The backup tars the host
+# ===========================================================================
+# UPTIME PROBE -- the only check that asks whether IPT is actually SERVING.
+# ===========================================================================
+# Nothing else here notices that the site is down. The backup tars the host
 # directory /usr/ipt and succeeds whether or not the container is running, so
-# its digest stays green during an outage. This probe is the only check that
-# actually asks whether IPT is serving.
-# Caveat: it mails on EVERY failed run, so a weekend-long outage means a mail
-# every 15 minutes. Add flap-damping (a state file) if that is too noisy.
+# its digest stays green throughout an outage.
 #
-#*/15 * * * * curl -fsS -m 20 -o /dev/null https://ipt.vtatlasoflife.org/ || echo "IPT DOWN: https://ipt.vtatlasoflife.org not responding"
-# ---------------------------------------------------------------------------
+# Silent while healthy: curl -f fails on any HTTP >= 400 and -s -o /dev/null
+# suppresses normal output, so the echo only fires when the site is not
+# serving. This one is an ALERT, not a heartbeat -- see the caveat below.
+#
+# NOISE: it mails on EVERY failed run. At */30 that is 48 mails a day per
+# recipient during an outage, so a Friday-night failure means roughly 100
+# mails each by Monday. If that becomes a problem, the fix is flap-damping:
+# a state file that mails on the transition into and out of DOWN rather than
+# on every probe. Ask before a long weekend.
+#
+# WHAT IT ACTUALLY TESTS: ipt.vtatlasoflife.org resolves to Cloudflare, so
+# this probe exercises the path a real user takes -- which is the right thing
+# to alert on. But it means Cloudflare sits between the probe and the origin.
+# An origin failure normally still surfaces (Cloudflare returns 521/522/523,
+# which curl -f treats as failure), though a cached response could mask a dead
+# origin. To watch the origin directly instead, probe ipt.vtecostudies.org,
+# which resolves straight to the EC2 host with no proxy in front. Running both
+# is also reasonable -- it doubles outage mail but distinguishes "the site is
+# down" from "Cloudflare cannot reach the origin".
+*/30 * * * * curl -fsS -m 20 -o /dev/null https://ipt.vtatlasoflife.org/ || echo "IPT DOWN: https://ipt.vtatlasoflife.org not responding"
+# ===========================================================================
