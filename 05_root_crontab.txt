@@ -107,6 +107,15 @@ MAILTO=kmcfarland@vtecostudies.org,jloomis@vtecostudies.org
 # one. The fallback guarantees this line always produces output.
 0 12 * * * certbot certificates 2>&1 | grep -E 'Certificate Name|Domains|Expiry Date' || echo "CERT CHECK FAILED -- certbot produced no certificate output. Run: sudo certbot certificates"
 
+# --- uptime probe heartbeat -------------------------------------------------
+# The */30 probe below is an ALERT: silent unless the state changes, because
+# speaking every run would be 48 mails a day per recipient. That silence means
+# you cannot tell "the site is up" from "the probe stopped running" -- the same
+# blind spot that hid the expired certificate.
+# So it also runs once daily with --verbose, which prints unconditionally.
+# One line a day confirming the probe itself is alive.
+0 12 * * * /home/ubuntu/val_ipt/10_ipt_uptime_probe.sh --verbose
+
 # --- backup inventory -------------------------------------------------------
 # Prints the same digest the nightly run emits on Mondays: what exists locally
 # and in S3, newest archive age, free space. Runs at 12:00 UTC, ten hours after
