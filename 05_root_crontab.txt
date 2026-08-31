@@ -97,15 +97,17 @@ MAILTO=kmcfarland@vtecostudies.org,jloomis@vtecostudies.org
 0 12 * * * df -kh /dev/root
 
 # --- certificate expiry -----------------------------------------------------
-# The renewal job below runs weekly; THIS runs daily and reports the state of
-# every lineage certbot knows about, including days remaining. It is the check
-# that would have screamed in April, when the cert expired and the renewal had
-# been failing silently for a month.
+# The renewal job below runs weekly; THIS runs daily and reports every lineage
+# certbot knows about with days remaining. It is the check that would have
+# screamed in April, when the cert expired and renewal had been failing
+# silently for a month.
 #
-# The '|| echo' matters: if certbot errors or prints nothing, grep matches
-# nothing, cron mails nothing, and a broken check looks exactly like a healthy
-# one. The fallback guarantees this line always produces output.
-0 12 * * * certbot certificates 2>&1 | grep -E 'Certificate Name|Domains|Expiry Date' || echo "CERT CHECK FAILED -- certbot produced no certificate output. Run: sudo certbot certificates"
+# This was an inline 'certbot certificates | grep ... || echo "CERT CHECK
+# FAILED"' until 2026-08-31. cron puts the ENTIRE command string in the mail
+# SUBJECT, so every healthy daily mail arrived titled "CERT CHECK FAILED"
+# while the body listed perfectly valid certs. The script name keeps the
+# subject neutral and puts the real verdict on the first line of the body.
+0 12 * * * /home/ubuntu/val_ipt/11_cert_status.sh
 
 # --- uptime probe heartbeat -------------------------------------------------
 # The */30 probe below is an ALERT: silent unless the state changes, because
