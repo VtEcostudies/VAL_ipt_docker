@@ -38,13 +38,25 @@ services:
     container_name: ipt_local
     restart: "no"
     ports:
-      # 8080 is ui_vt and 8090 is taken on this workstation.
-      - "127.0.0.1:8088:8080"
+      # Host and container port MUST match. The IPT writes absolute asset URLs
+      # built from ipt.baseURL, so if the container serves 8080 while you browse
+      # 8088, every CSS and JS request goes to localhost:8080 — which on this
+      # workstation is ui_vt, not the IPT — and the site renders unstyled.
+      # 8080 itself is taken by ui_vt, so Tomcat is moved to 8088 instead
+      # (see the command: below) and both sides agree.
+      - "127.0.0.1:8088:8088"
     volumes:
       - ./ipt_data_local:/srv/ipt
     environment:
       # Pin the JVM's heap low; the default sizing assumes a server.
       JAVA_OPTS: "-Xmx1g"
+    # Move Tomcat's connector off 8080 so the container port matches the host
+    # port. The image exposes no env var for this, so server.xml is patched at
+    # start-up; it is regenerated from the image on every run, so this is not a
+    # persistent edit.
+    command: >
+      bash -c "sed -i 's/port=\"8080\"/port=\"8088\"/g' /usr/local/tomcat/conf/server.xml &&
+               exec catalina.sh run"
     logging:
       driver: "json-file"
       options:

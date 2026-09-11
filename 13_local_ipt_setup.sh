@@ -160,7 +160,9 @@ if docker exec ipt_local sh -c 'grep -q "^ipt.baseURL=." /srv/ipt/config/ipt.pro
     say "4/4 public URL      already set"
 else
     prime "setupPublicUrl.do"
-    code=$(post setupPublicUrl.do -d 'baseURL=http://localhost:8080' \
+    # Must equal the URL people actually browse: the IPT builds absolute asset
+    # URLs from it, so a mismatch serves CSS and JS from the wrong port.
+    code=$(post setupPublicUrl.do -d "baseURL=$BASE" \
                 -d 'setupPublicUrl=Save' -d 'proxy=' -d 'save=Save')
     if docker exec ipt_local sh -c 'grep -q "^ipt.baseURL=." /srv/ipt/config/ipt.properties' 2>/dev/null; then
         say "4/4 public URL      set"
