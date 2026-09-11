@@ -89,15 +89,17 @@ if [ -n "$PROD_VERSION" ]; then
 fi
 
 # ─── Setup wizard ──────────────────────────────────────────────────────────
-LANDING=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 10 "$BASE/")
-if [ -z "$LANDING" ] || ! echo "$LANDING" | grep -q setup; then
-    hr "Already set up"
-    say "$BASE"
-    say "sign in as $ADMIN_EMAIL"
-    exit 0
+# Follows redirects: "/" always 302s to setupDataDirectory.do and forwards
+# internally to whichever step is outstanding.
+at_step_pre() { curl -sL -o /dev/null -w '%{url_effective}' --max-time 15 "$BASE/" \
+                  | grep -oE 'setup[A-Za-z]*\.do' | head -1; }
+if [ -n "$(at_step_pre)" ]; then
+    hr "Running the setup wizard"
+    WIZARD=1
+else
+    hr "Setup wizard already complete"
+    WIZARD=0
 fi
-
-hr "Running the setup wizard"
 
 # Every POST must echo the CSRFtoken cookie back as a form field.
 csrf() { awk '/CSRFtoken/{print $7}' "$JAR" 2>/dev/null; }
@@ -138,6 +140,7 @@ step() {
     say "$label ok${after:+ — next: $after}"
 }
 
+if [ "$WIZARD" = "1" ]; then
 prime "setupDataDirectory.do"
 step "1/4 data directory  " setupDataDirectory.do -d 'dataDirPath=/srv/ipt' -d 'save=Save'
 step "2/4 administrator   " setupDefaultAdministrator.do \
@@ -145,13 +148,31 @@ step "2/4 administrator   " setupDefaultAdministrator.do \
         -d "user.password=$ADMIN_PW" -d "password2=$ADMIN_PW" -d 'save=Save'
 # TEST, never Production: a throwaway instance must not be able to register a
 # dataset with GBIF.
-step "3/4 mode = Test     " setupMode.do -d 'modeSelected=Test' -d 'save=Save' 
+step "3/4 mode = Test     " setupMode.do -d 'modeSelected=Test' -d 'save=Save'
+fi
 
-LANDING=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 10 "$BASE/")
-if echo "${LANDING:-}" | grep -q setup; then
-    say "4/4 still at: $LANDING — finish by hand at $BASE"
+# Step 4. The IPT validates the public URL by CALLING IT ITSELF, from inside
+# the container — so it must be reachable there. http://localhost:8088 is the
+# host's mapping and fails validation; the container's own port does not.
+# Nothing published here leaves this machine, so the value only has to satisfy
+# that self-check.
+if docker exec ipt_local sh -c 'grep -q "^ipt.baseURL=." /srv/ipt/config/ipt.properties' 2>/dev/null; then
+    say "4/4 public URL      already set"
 else
-    say "4/4 complete"
+    prime "setupPublicUrl.do"
+    code=$(post setupPublicUrl.do -d 'baseURL=http://localhost:8080' \
+                -d 'setupPublicUrl=Save' -d 'proxy=' -d 'save=Save')
+    if docker exec ipt_local sh -c 'grep -q "^ipt.baseURL=." /srv/ipt/config/ipt.properties' 2>/dev/null; then
+        say "4/4 public URL      set"
+    else
+        say "4/4 public URL      FAILED (HTTP $code)"
+    fi
+fi
+
+# An empty ipt.baseURL fails every resource import with
+# "IPT's base URL must not be null or empty" and no hint as to which step.
+if docker exec ipt_local sh -c 'grep -q "^ipt.baseURL=$" /srv/ipt/config/ipt.properties' 2>/dev/null; then
+    say "    WARNING: ipt.baseURL is still empty — imports will fail"
 fi
 
 # ─── Core types and extensions ─────────────────────────────────────────────
@@ -215,6 +236,47 @@ else
     say "could not read $REGISTRY — install core types by hand at $BASE/admin/extensions.do"
 fi
 rm -f "$WANT_FILE" "$WANT_FILE.json"
+
+# ─── Hosting organisation ──────────────────────────────────────────────────
+#
+# "No resources can be created until at least one organization able to host
+# resources is associated to the IPT." The UI path validates an organisation
+# key + password against the GBIF registry, so there is nothing valid to enter
+# on a throwaway instance.
+#
+# Organisations loaded from disk are not validated, so one is written straight
+# into registration2.xml. That file is an XStream object stream: a <registry>
+# element followed by sibling <organisation> elements, all inside <registration>.
+hr "Hosting organisation"
+
+if docker exec ipt_local sh -c 'grep -q "<canHost>true</canHost>" /srv/ipt/config/registration2.xml' 2>/dev/null; then
+    say "already associated"
+else
+    docker exec -i ipt_local sh -c 'cat > /srv/ipt/config/registration2.xml' <<'ORGEOF'
+<registration>
+  <registry/>
+  <organisation>
+    <key>11111111-2222-3333-4444-555555555555</key>
+    <name>Local Test Organisation (LOCAL ONLY)</name>
+    <alias>LOCALTEST</alias>
+    <description>Placeholder so resources can be created on this disposable instance. NOT a real GBIF organisation and has no registry credentials. Never copy this onto a registered IPT.</description>
+    <canHost>true</canHost>
+  </organisation>
+</registration>
+ORGEOF
+    docker exec ipt_local sh -c 'chown 999:999 /srv/ipt/config/registration2.xml; chmod 640 /srv/ipt/config/registration2.xml'
+    $COMPOSE restart ipt_local >/dev/null 2>&1
+    for i in $(seq 1 40); do
+        c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$BASE/" 2>/dev/null)
+        [ "$c" != "000" ] && break
+        sleep 3
+    done
+    if docker exec ipt_local sh -c 'grep -q "<canHost>true</canHost>" /srv/ipt/config/registration2.xml' 2>/dev/null; then
+        say "associated (the IPT re-serialized it, so it loaded cleanly)"
+    else
+        say "WARNING: the IPT discarded it — resources cannot be created"
+    fi
+fi
 
 # ─── Verify ────────────────────────────────────────────────────────────────
 hr "Verifying"
