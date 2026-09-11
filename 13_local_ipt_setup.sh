@@ -154,6 +154,68 @@ else
     say "4/4 complete"
 fi
 
+# ─── Core types and extensions ─────────────────────────────────────────────
+#
+# A fresh IPT 3.0.1 cannot install its first extension through the web UI.
+# ExtensionsAction.list() derives lastSynchronised by looping over INSTALLED
+# extensions; with none installed it stays null, and extensions.ftl line 226
+# does ${lastSynchronised?datetime?...} with no null guard, so FreeMarker throws
+# and the page renders without the install list. The button that would fix it
+# lives on the page that will not render — a genuine chicken-and-egg.
+#
+# ExtensionsAction.save() installs from a plain url parameter, which sidesteps
+# it. Installing these four also makes the instance able to map the LoonWeb
+# resource package at all.
+# Needs an authenticated session.
+csrf_login() {
+    rm -f "$JAR"
+    curl -s -c "$JAR" -b "$JAR" --max-time 15 "$BASE/login.do" -o "$JAR.html"
+    local t
+    t=$(grep -oE 'name="csrfToken"[^>]*value="[^"]*"' "$JAR.html" 2>/dev/null \
+          | grep -oE 'value="[^"]*"' | cut -d'"' -f2)
+    curl -s -c "$JAR" -b "$JAR" --max-time 20 -o /dev/null \
+         -d "email=$ADMIN_EMAIL" -d "password=$ADMIN_PW" -d "csrfToken=$t" "$BASE/login.do"
+    rm -f "$JAR.html"
+}
+csrf_login
+
+hr "Installing core types and extensions"
+
+REGISTRY="${LOCAL_IPT_REGISTRY:-https://gbrds.gbif-uat.org/registry/extensions.json}"
+WANT_FILE=$(mktemp)
+curl -sL --max-time 60 "$REGISTRY" -o "$WANT_FILE.json" 2>/dev/null
+
+python3 - "$WANT_FILE.json" > "$WANT_FILE" <<'PYEOF'
+import json, sys
+want = {
+  'http://rs.tdwg.org/dwc/terms/Event':                        'Event core',
+  'http://rs.tdwg.org/dwc/terms/Occurrence':                   'Occurrence',
+  'http://rs.iobis.org/obis/terms/ExtendedMeasurementOrFact':  'eMoF',
+  'http://rs.tdwg.org/eco/terms/Event':                        'Humboldt',
+}
+try:
+    for e in json.load(open(sys.argv[1]))['extensions']:
+        i = e.get('identifier', '')
+        if i in want and e.get('isLatest'):
+            print(f"{want[i]}|{e['url']}")
+except Exception:
+    pass
+PYEOF
+
+if [ -s "$WANT_FILE" ]; then
+    while IFS='|' read -r name url; do
+        [ -n "$url" ] || continue
+        code=$(curl -sL -c "$JAR" -b "$JAR" --max-time 180 -o /dev/null -w '%{http_code}' \
+                 --data-urlencode "url=$url" -d "save=Save" "$BASE/admin/extension.do")
+        printf "  %-12s HTTP %s\n" "$name" "$code"
+    done < "$WANT_FILE"
+    n=$(docker exec ipt_local sh -c 'ls /srv/ipt/config/.extensions/ 2>/dev/null | wc -l' 2>/dev/null | tr -d '\r')
+    say "installed: ${n:-0} extension definitions"
+else
+    say "could not read $REGISTRY — install core types by hand at $BASE/admin/extensions.do"
+fi
+rm -f "$WANT_FILE" "$WANT_FILE.json"
+
 # ─── Verify ────────────────────────────────────────────────────────────────
 hr "Verifying"
 rm -f "$JAR"; prime "login.do"
