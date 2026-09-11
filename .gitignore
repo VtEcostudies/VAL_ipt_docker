@@ -19,3 +19,6 @@ legacy_review/
 *credentials*.sh
 sasl_passwd
 sasl_passwd.db
+
+# Disposable local IPT instance (docker-compose-local.yml)
+ipt_data_local/

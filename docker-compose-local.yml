@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# docker-compose-local.yml — a disposable IPT on this workstation.
+#
+# For trying things before they touch ipt.vtatlasoflife.org: importing a
+# generated resource package, checking field mappings landed, confirming a
+# <sqlsource> actually connects. Nothing here is production-shaped.
+#
+# Differences from docker-compose.yml, all deliberate:
+#   * no nginx, no certificates, no VIRTUAL_HOST — plain http on a spare port
+#   * data lives in ./ipt_data_local (git-ignored), not /usr/ipt, so a reset is
+#     'rm -rf' rather than touching the real data directory
+#   * restart: "no" — a test instance should stay down when you stop it
+#   * joined to the LoonWeb compose network, so a SQL source can reach db_vt
+#     directly as db_vt:5432. The host's published port is bound to 127.0.0.1
+#     and is not reachable from inside a container.
+#
+# Usage:
+#   docker compose -f docker-compose-local.yml up -d
+#   open http://localhost:8088          # first run: 3-step setup wizard
+#   docker compose -f docker-compose-local.yml down
+#   rm -rf ipt_data_local               # full reset
+#
+# The LoonWeb stack must be up first — this joins its network:
+#   cd ~/Docker/VCE_db_docker && docker compose -f docker-compose-vermont.yml up -d
+# ---------------------------------------------------------------------------
+version: "3.7"
+
+services:
+
+  ipt_local:
+    # PINNED to match ipt.vtatlasoflife.org, which reports
+    # "GBIF IPT 3.0.1-r2584670". ':latest' pulls 3.3.6, and testing a resource
+    # import against a different IPT version proves nothing about production —
+    # resource.xml is XStream-serialized and its shape tracks the code.
+    # Check production's version with:
+    #   curl -s https://ipt.vtatlasoflife.org/rss.do | grep -o '<generator>[^<]*'
+    image: gbif/ipt:3.0.1
+    container_name: ipt_local
+    restart: "no"
+    ports:
+      # 8080 is ui_vt and 8090 is taken on this workstation.
+      - "127.0.0.1:8088:8080"
+    volumes:
+      - ./ipt_data_local:/srv/ipt
+    environment:
+      # Pin the JVM's heap low; the default sizing assumes a server.
+      JAVA_OPTS: "-Xmx1g"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
+networks:
+  default:
+    name: vce_db_docker_default
+    external: true
