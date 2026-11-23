@@ -195,6 +195,10 @@ fi
 hr "6. root crontab"
 if sudo crontab -l 2>/dev/null | cmp -s - "$REPO/05_root_crontab.txt"; then
     ok "matches 05_root_crontab.txt"
+elif ! sudo test -d /usr/ipt/resources; then
+    # Not before cutover: the 02:00 backup would archive an empty /usr/ipt and
+    # upload it under the same S3 names the old host is still writing.
+    need "crontab waits until /usr/ipt is migrated (runbook step 5); re-run --apply then"
 elif [ $APPLY -eq 1 ]; then
     sudo crontab "$REPO/05_root_crontab.txt" && ok "installed 05_root_crontab.txt"
 else
