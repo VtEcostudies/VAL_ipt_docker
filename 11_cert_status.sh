@@ -18,10 +18,9 @@
 #
 # WHY 21 DAYS IS THE WARNING THRESHOLD:
 #   Let's Encrypt issues 90-day certs; certbot renews at 30 days remaining.
-#   00_certs_do_all.sh runs weekly, so a healthy system renews within about a
-#   week of the window opening -- i.e. by roughly 23 days remaining. Still
-#   holding a cert at 21 days means at least two renewal attempts have already
-#   failed, which is the moment to look, not after it expires.
+#   certbot.timer tries twice a day, so a healthy system renews on the day the
+#   window opens. Still holding a cert at 21 days means about 18 days of
+#   failed attempts, which is the moment to look, not after it expires.
 #
 # USAGE:
 #   11_cert_status.sh                 verdict + all lineages   (what cron runs)
@@ -114,15 +113,15 @@ printf '%s' "$rows"
 if [ -n "$dupes" ]; then
     echo
     echo "  NOTE: these names appear in more than one lineage: $dupes"
-    echo "        Both get renewed every cycle, and which one nginx serves depends"
-    echo "        on 03_cerbot_certs_copy.sh. Not urgent, but worth consolidating."
+    echo "        Both get renewed; nginx (nginx/ipt.conf) serves ipt.vtatlasoflife.org."
+    echo "        Not urgent, but the other lineage could be deleted."
 fi
 
 if [ "$problems" -gt 0 ]; then
     echo
-    echo "  Renewal runs weekly (Sun 04:30 UTC) via 00_certs_do_all.sh."
-    echo "  A cert still under $WARN_DAYS days means renewal has already failed"
-    echo "  more than once. Check:  sudo tail -100 /var/log/ipt_certs.log"
+    echo "  Renewal runs twice daily via certbot.timer (nginx authenticator)."
+    echo "  A cert still under $WARN_DAYS days means renewal has been failing for"
+    echo "  weeks. Check:  sudo certbot renew --dry-run ; journalctl -u certbot"
     exit 1
 fi
 exit 0

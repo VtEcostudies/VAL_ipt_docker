@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stop the IPT stack. Frees ports 80/443 so certbot --standalone can bind them.
+# Stop the IPT container. The host nginx stays up and answers 502 meanwhile.
 #
 # 'stop', not 'down': 'down' DESTROYS the containers and with them the
 # 'docker logs' history you need to diagnose an outage. 'stop' keeps the

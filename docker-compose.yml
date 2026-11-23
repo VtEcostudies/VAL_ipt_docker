@@ -1,13 +1,15 @@
 # ---------------------------------------------------------------------------
 # AFTER CHANGING THIS FILE, DEPLOY WITH ./06_update_ipt_docker_instance.sh
-# (which does down + up), NOT a bare 'docker-compose up -d'.
-# docker-compose v1 against a modern Docker Engine aborts on the in-place
-# RECREATE path with "KeyError: 'ContainerConfig'" -- after it has already
-# killed the containers. down + up takes the fresh-create path and is safe.
-# 04_ipt_docker_up.sh now falls back to down + up automatically, but running 06
-# once after any edit here avoids relying on that.
+# (which pulls, then does down + up).
+#
+# 'docker-compose' on the 26.04 server is a shim for 'docker compose
+# --compatibility' (installed by 14_install_new_server.sh), so container names
+# keep the v1 form val_ipt_ipt_1 that bash_ipt.sh and habits expect.
+#
+# HTTPS is terminated by the HOST's nginx (nginx/ipt.conf), not by a container:
+# the IPT publishes 8080 on 127.0.0.1 only. Nothing outside this machine talks
+# to Tomcat directly, so there is no security-group rule for 8080 either.
 # ---------------------------------------------------------------------------
-version: "3.7"
 
 services:
 
@@ -20,61 +22,17 @@ services:
     # 3.0.1 -> 3.3.8 on 2026-11-23. From 3.3.x the image runs as uid 999
     # (tomcat), not root, so /usr/ipt must be owned by 999:999 -- 06 ensures it.
     image: gbif/ipt:3.3.8
-    # Previously this service had NO restart policy while nginx had
-    # 'restart: always'. After a host reboot or a Docker daemon restart the
-    # proxy came back and IPT did not -- the site was down, container showing
-    # "Exited (0)", until a human noticed.
     # 'always' rather than 'unless-stopped' is deliberate: 'always' also revives
-    # containers that were stopped when the daemon restarted, so a reboot in the
-    # middle of the cert-renewal window still ends with IPT running. It fails
-    # toward "service up", which is the priority here.
-    # A deliberate 'docker-compose stop' is still honoured until the daemon
-    # restarts, so 01_ipt_docker_down.sh works as intended.
+    # a container that was stopped when the daemon restarted, so it fails toward
+    # "service up". A deliberate 'docker-compose stop' (01_ipt_docker_down.sh)
+    # is still honoured until the daemon restarts.
     restart: always
-    environment:
-      # for jwilder to work, VIRTUAL_HOST must match the url/host name. If local, in /etc/hosts put eg.:
-      # 127.0.0.1	ipt.local.org
-      #VIRTUAL_HOST: ipt.local.org
-      VIRTUAL_HOST: ipt.vtatlasoflife.org,ipt.vtecostudies.org
-      VIRTUAL_PROTO: http
-      VIRTUAL_PORT: 8080
-      CERT_NAME: ipt
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - /usr/ipt:/srv/ipt
     # Bound container logs so 'docker logs' keeps useful history for post-mortems
-    # without filling /dev/root. 3 x 20MB per container.
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "3"
-
-  nginx:
-    image: jwilder/nginx-proxy:latest
-    restart: always
-    ports:
-      # port syntax is "external:internal"
-      - "443:443"
-      - "80:80"
-    environment:
-      DEFAULT_HOST: ipt.vtatlasoflife.org
-    links:
-      - ipt
-    volumes:
-      - /var/run/docker.sock:/tmp/docker.sock:ro
-      - /etc/letsencrypt/live/ipt.vtatlasoflife.org:/etc/nginx/certs
-      # For jwilder/nginx-proxy to find them, certs must be {name}.crt and {name}.key, and
-      # the docker volume spec must be a path to there, eg. /certs/hostname:/etc/nginx/certs.
-      # Letsencrypt installs certs in eg. /etc/letsencrypt/archive/ipt.vtatlasoflife.org, then
-      # creates symlinks to those from /etc/letsencrypt/live/ipt.vtatlasoflife.org. Docker did not
-      # resolve symlinks from the external filesystem, so you must create literal cert files in the 
-      # target external certs directory. A good test is to cat those certs files within docker.
-      # The underlying app must define the environment variable CERT_NAME: {name}, without extension.
-      # Also: copy certbot's privkey.pem to {name}.key and fullchain.pem to {name}.crt, or if symlinks
-      # can be made to work, link {name}.key => privkey.pem and {name}.crt => fullchain.pem.
-      - ./ipt_proxy.conf:/etc/nginx/conf.d/ipt_proxy.conf:ro
+    # without filling the root volume. 3 x 20MB.
     logging:
       driver: "json-file"
       options:

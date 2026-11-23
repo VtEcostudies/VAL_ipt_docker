@@ -24,15 +24,15 @@ hdr() { printf '\n\n===== %s =====\n' "$*"; }
 hdr "1. CONTAINER STATE"
 docker-compose ps 2>/dev/null
 echo
-docker ps -a --filter "name=ipt" --filter "name=nginx" \
+docker ps -a --filter "name=ipt" \
     --format 'table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}'
 echo
-for c in $(docker ps -aq --filter "name=ipt" --filter "name=nginx"); do
+for c in $(docker ps -aq --filter "name=ipt"); do
     docker inspect -f '{{.Name}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} restarts={{.RestartCount}}' "$c"
 done
 
 hdr "2. CONTAINER LOGS (last $days days, error lines)"
-for c in $(docker ps -aq --filter "name=ipt" --filter "name=nginx"); do
+for c in $(docker ps -aq --filter "name=ipt"); do
     echo "--- $(docker inspect -f '{{.Name}}' "$c") ---"
     docker logs --since "${days}d" --timestamps "$c" 2>&1 \
         | grep -iE 'error|exception|fatal|severe|out of memory|shutdown|refused' \
@@ -71,8 +71,12 @@ grep -ihE 'cron.*(ipt|certs|backup)|shutdown|unattended' \
 
 hdr "5a. CERTBOT"
 tail -40 /var/log/letsencrypt/letsencrypt.log 2>/dev/null
-echo "--- cert job log ---"
-tail -30 /var/log/ipt_certs.log 2>/dev/null || echo "(no /var/log/ipt_certs.log yet)"
+echo "--- certbot.timer (renewal; nginx authenticator) ---"
+systemctl list-timers certbot.timer --no-pager 2>/dev/null | head -3
+journalctl -u certbot.service --since "$since" --no-pager 2>/dev/null | tail -15
+hdr "5c. HOST NGINX (TLS front end)"
+systemctl is-active nginx
+tail -20 /var/log/nginx/error.log 2>/dev/null
 echo "--- cert expiry ---"
 certbot certificates 2>/dev/null | grep -E 'Certificate Name|Expiry'
 

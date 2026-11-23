@@ -135,39 +135,22 @@ MAILTO=kmcfarland@vtecostudies.org,jloomis@vtecostudies.org
 # CERTIFICATE RENEWAL
 # ===========================================================================
 
-# WHY WEEKLY, NOT MONTHLY. Let's Encrypt issues 90-day certs and 'certbot
-# renew' refuses to act until 30 days before expiry. A job running monthly on
-# the 1st therefore lands inside that window roughly ONCE -- and if that single
-# run fails, there is no retry before the cert dies. That is precisely what
-# happened: the Jan 6 cert opened its window on Mar 7; the Mar 1 run was six
-# days too early to do anything, the Apr 1 run was the only real chance, and
-# the cert expired Apr 6. Weekly gives four attempts inside the same window.
+# NO CRON JOB HERE ANY MORE (2026-11-23, Ubuntu 26.04 server).
 #
-# 'certbot renew' is a no-op when nothing is due, so the extra runs cost only
-# the brief container restart 00_certs_do_all.sh performs.
+# Renewal is done by the certbot package's own systemd timer (certbot.timer,
+# twice a day), authenticating through the HOST nginx (renewal configs set to
+# authenticator/installer = nginx with 'certbot reconfigure ... --nginx').
+# It needs no port 80 handover, so the site never stops, and certbot reloads
+# nginx itself after a renewal. Check it with:
+#     systemctl list-timers certbot.timer
+#     sudo certbot renew --dry-run
 #
-# 04:30 UTC Sunday, NOT 02:30: the nightly backup starts at 02:00 and tars
-# /usr/ipt, while this job stops and restarts the containers. Thirty minutes
-# was an assumption about how long the backup takes; two and a half hours is a
-# margin. Sunday because the weekly backup promotion also happens Sunday and
-# is already accounted for.
+# The old weekly job (00_certs_do_all.sh: stop the containers, certbot
+# --standalone, copy the certs for nginx-proxy, start again) existed only
+# because the proxy was a container. It is in git history if ever needed.
 #
-# NOTE: this path must point at the repo checkout (the one holding
-# docker-compose.yml). Confirm on the host before trusting it.
-# 'tee' rather than '>>': a plain redirect would send ALL output to the file and
-# cron would mail NOTHING -- silently hiding a failed renewal, from the very job
-# that took the site down. tee keeps the log AND lets cron mail the result.
-# This is the "attempted" signal: it mails every Sunday whether or not a
-# renewal was actually due, so you see the attempt as well as the outcome.
-#
-# Goes to both recipients, like everything else here. cron cannot route by
-# outcome -- whoever the MAILTO names gets the routine Sunday mail and the
-# failures alike.
-30 4 * * 0 /home/ubuntu/val_ipt/00_certs_do_all.sh 2>&1 | tee -a /var/log/ipt_certs.log
-
-# Previous monthly schedule, kept for reference. Do not re-enable without
-# reading the paragraph above -- it is the schedule that let the cert expire.
-#30 2 1 * * /home/ubuntu/val_ipt/00_certs_do_all.sh 2>&1 | tee -a /var/log/ipt_certs.log
+# The ALARM is unchanged: 11_cert_status.sh above mails daily and shouts at
+# 21 days remaining, by which point the timer has failed many times over.
 
 
 # ===========================================================================

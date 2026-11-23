@@ -1,7 +1,6 @@
 #!/bin/bash
-# Start the IPT stack. Safe whether the containers are stopped, already running,
-# or absent. This is the script 00_certs_do_all.sh's EXIT trap depends on to
-# restore service, so it must not leave the site down.
+# Start the IPT container. Safe whether it is stopped, already running, or
+# absent. It must not leave the site down.
 set -u
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 

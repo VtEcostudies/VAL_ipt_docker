@@ -15,8 +15,7 @@ cd "$(dirname "$(readlink -f "$0")")" || exit 1
 IPT_DATA=/usr/ipt
 IPT_UID=999   # 'tomcat' inside gbif/ipt 3.3.x; older images ran as root
 
-# Pull before 'down' so a failed pull leaves the site running. Only the ipt
-# service: nginx-proxy is ':latest' and must not change as a side effect.
+# Pull before 'down' so a failed pull leaves the site running.
 sudo docker-compose pull ipt || { echo "06: pull failed - nothing changed" >&2; exit 1; }
 
 # gbif/ipt 3.3.x runs as uid 999, and an IPT that cannot write its data
