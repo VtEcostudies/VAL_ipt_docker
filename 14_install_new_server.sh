@@ -54,7 +54,10 @@ esac
 IPT_UID=999
 CERT_LIVE=/etc/letsencrypt/live/ipt.vtatlasoflife.org
 export DEBIAN_FRONTEND=noninteractive
-APT=(sudo -E apt-get -y -q -o DPkg::Lock::Timeout=600)
+# confold: /etc/letsencrypt is copied in BEFORE certbot is installed, so its
+# cli.ini already exists and dpkg would stop to ask about it. Keep ours.
+APT=(sudo -E apt-get -y -q -o DPkg::Lock::Timeout=600
+     -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 
 todo=0
 hr()   { echo; echo "── $* ──────────────────────────────────────"; }
