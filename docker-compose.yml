@@ -12,7 +12,14 @@ version: "3.7"
 services:
 
   ipt:
-    image: gbif/ipt:latest
+    # PINNED, not ':latest'. An upgrade converts /usr/ipt in place (resource.xml,
+    # EML, vocabularies), so it must be a deliberate step: test the new version
+    # against a copy of the newest backup first, then bump this tag and run
+    # ./06_update_ipt_docker_instance.sh. Rolling back means restoring /usr/ipt
+    # from the pre-upgrade backup, not just reverting this tag.
+    # 3.0.1 -> 3.3.8 on 2026-11-23. From 3.3.x the image runs as uid 999
+    # (tomcat), not root, so /usr/ipt must be owned by 999:999 -- 06 ensures it.
+    image: gbif/ipt:3.3.8
     # Previously this service had NO restart policy while nginx had
     # 'restart: always'. After a host reboot or a Docker daemon restart the
     # proxy came back and IPT did not -- the site was down, container showing
